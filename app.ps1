@@ -1,13 +1,13 @@
-﻿
-# Requires modules: SqlServer, ImportExcel (EPPlus)
+﻿# Requires modules: SqlServer, ImportExcel (EPPlus)
 Add-Type -AssemblyName System.Windows.Forms
 
-# Create the form and controls
+# Create the form with improved size
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "CSV to SQL Execution"
-$form.Size = New-Object System.Drawing.Size(500, 650)
+$form.Size = New-Object System.Drawing.Size(600, 700)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
+$form.Padding = New-Object System.Windows.Forms.Padding(20)
 
 # Function to create labels
 function Create-Label {
@@ -19,165 +19,166 @@ function Create-Label {
     $label.Text = $text
     $label.Location = $location
     $label.Size = New-Object System.Drawing.Size(100, 20)
+    $label.AutoSize = $true
     return $label
 }
 
 # Function to create textboxes
 function Create-TextBox {
     param (
-        [System.Drawing.Point]$location
+        [System.Drawing.Point]$location,
+        [int]$width = 300
     )
     $textBox = New-Object System.Windows.Forms.TextBox
     $textBox.Location = $location
-    $textBox.Size = New-Object System.Drawing.Size(200, 20)
+    $textBox.Size = New-Object System.Drawing.Size($width, 20)
     return $textBox
 }
 
-# Function to create radio buttons
-function Create-RadioButton {
-    param (
-        [string]$text,
-        [System.Drawing.Point]$location
-    )
-    $radioButton = New-Object System.Windows.Forms.RadioButton
-    $radioButton.Text = $text
-    $radioButton.Location = $location
-    $radioButton.Size = New-Object System.Drawing.Size(150, 30)
-    return $radioButton
-}
+# Create GroupBox for Database Connection
+$groupBoxConnection = New-Object System.Windows.Forms.GroupBox
+$groupBoxConnection.Text = "Database Connection"
+$groupBoxConnection.Size = New-Object System.Drawing.Size(540, 140)
+$groupBoxConnection.Location = New-Object System.Drawing.Point(20, 20)
 
-# Create labels and textboxes for SQL Server, database, table name, authentication, etc.
-$labelServer =  Create-Label "SQL Server:" (New-Object System.Drawing.Point(10, 20))
-$form.Controls.Add($labelServer)
+# Add controls to Connection GroupBox
+$labelServer = Create-Label "SQL Server:" (New-Object System.Drawing.Point(20, 30))
+$textServer = Create-TextBox (New-Object System.Drawing.Point(120, 27))
+$labelDatabase = Create-Label "Database:" (New-Object System.Drawing.Point(20, 60))
+$textDatabase = Create-TextBox (New-Object System.Drawing.Point(120, 57))
+$labelTableName = Create-Label "Table Name:" (New-Object System.Drawing.Point(20, 90))
+$textTableName = Create-TextBox (New-Object System.Drawing.Point(120, 87))
 
-$textServer = Create-TextBox (New-Object System.Drawing.Point(120, 20))
-$form.Controls.Add($textServer)
+$groupBoxConnection.Controls.AddRange(@($labelServer, $textServer, $labelDatabase, $textDatabase, $labelTableName, $textTableName))
 
-$labelDatabase = Create-Label "Database:" (New-Object System.Drawing.Point(10, 60))
-$form.Controls.Add($labelDatabase)
+# Create GroupBox for Authentication
+$groupBoxAuth = New-Object System.Windows.Forms.GroupBox
+$groupBoxAuth.Text = "Authentication"
+$groupBoxAuth.Size = New-Object System.Drawing.Size(540, 120)
+$groupBoxAuth.Location = New-Object System.Drawing.Point(20, 170)
 
-$textDatabase = Create-TextBox (New-Object System.Drawing.Point(120, 60))
-$form.Controls.Add($textDatabase)
-
-$labelTableName = Create-Label "Table Name:" (New-Object System.Drawing.Point(10, 100))
-$form.Controls.Add($labelTableName)
-
-$textTableName = Create-TextBox (New-Object System.Drawing.Point(120, 100))
-$form.Controls.Add($textTableName)
-
-
-# Radio buttons for authentication
-$radioWindowsAuth = Create-RadioButton "Windows Authentication" (New-Object System.Drawing.Point(10, 140))
+# Authentication radio buttons
+$radioWindowsAuth = New-Object System.Windows.Forms.RadioButton
+$radioWindowsAuth.Text = "Windows Authentication"
+$radioWindowsAuth.Location = New-Object System.Drawing.Point(20, 30)
+$radioWindowsAuth.Size = New-Object System.Drawing.Size(200, 20)
 $radioWindowsAuth.Checked = $true
-$form.Controls.Add($radioWindowsAuth)
 
-$radioSQLAuth = Create-RadioButton "SQL Server Authentication" (New-Object System.Drawing.Point(180, 140))
-$form.Controls.Add($radioSQLAuth)
+$radioSQLAuth = New-Object System.Windows.Forms.RadioButton
+$radioSQLAuth.Text = "SQL Server Authentication"
+$radioSQLAuth.Location = New-Object System.Drawing.Point(220, 30)
+$radioSQLAuth.Size = New-Object System.Drawing.Size(200, 20)
 
 # SQL Authentication controls
-$labelUsername = Create-Label "Username:" (New-Object System.Drawing.Point(10, 180))
-$labelUsername.Visible = $false
-$form.Controls.Add($labelUsername)
-
-$textUsername = Create-TextBox (New-Object System.Drawing.Point(120, 180))
-$textUsername.Visible = $false
-$form.Controls.Add($textUsername)
-
-$labelPassword = Create-Label "Password:" (New-Object System.Drawing.Point(10, 220))
-$labelPassword.Visible = $false
-$form.Controls.Add($labelPassword)
-
-$textPassword = Create-TextBox (New-Object System.Drawing.Point(120, 220))
+$labelUsername = Create-Label "Username:" (New-Object System.Drawing.Point(20, 60))
+$textUsername = Create-TextBox (New-Object System.Drawing.Point(120, 57))
+$labelPassword = Create-Label "Password:" (New-Object System.Drawing.Point(20, 90))
+$textPassword = Create-TextBox (New-Object System.Drawing.Point(120, 87))
 $textPassword.PasswordChar = "*"
+
+$labelUsername.Visible = $false
+$textUsername.Visible = $false
+$labelPassword.Visible = $false
 $textPassword.Visible = $false
-$form.Controls.Add($textPassword)
 
 # Authentication radio button event handlers
 $radioWindowsAuth.Add_CheckedChanged({
-    $labelUsername.Visible = !$radioWindowsAuth.Checked
-    $textUsername.Visible = !$radioWindowsAuth.Checked
-    $labelPassword.Visible = !$radioWindowsAuth.Checked
-    $textPassword.Visible = !$radioWindowsAuth.Checked
-})
-
-$radioSQLAuth.Add_CheckedChanged({
-    $labelUsername.Visible = $radioSQLAuth.Checked
-    $textUsername.Visible = $radioSQLAuth.Checked
-    $labelPassword.Visible = $radioSQLAuth.Checked
-    $textPassword.Visible = $radioSQLAuth.Checked
-})
-
-# Execution type radio buttons
-$radioStoredProcedure = Create-RadioButton "Stored Procedure" (New-Object System.Drawing.Point(10, 260))
-$radioStoredProcedure.Checked = $true
-$form.Controls.Add($radioStoredProcedure)
-
-$radioSqlScript = Create-RadioButton "SQL Script" (New-Object System.Drawing.Point(180, 260))
-$form.Controls.Add($radioSqlScript)
-
-# Stored procedure controls
-$labelStoredProcedure = Create-Label "Stored Procedure:" (New-Object System.Drawing.Point(10, 300))
-$form.Controls.Add($labelStoredProcedure)
-
-$textStoredProcedure = Create-TextBox (New-Object System.Drawing.Point(120, 300))
-$form.Controls.Add($textStoredProcedure)
-
-# SQL Script controls
-$labelSQLScript = Create-Label "SQL Script File:" (New-Object System.Drawing.Point(10, 300))
-$labelSQLScript.Visible = $false
-$form.Controls.Add($labelSQLScript)
-
-$textSQLScriptPath = Create-TextBox (New-Object System.Drawing.Point(120, 300))
-$textSQLScriptPath.Visible = $false
-$form.Controls.Add($textSQLScriptPath)
-
-$buttonSelectSQLScript = New-Object System.Windows.Forms.Button
-$buttonSelectSQLScript.Text = "Select Script"
-$buttonSelectSQLScript.Location = New-Object System.Drawing.Point(330, 300)
-$buttonSelectSQLScript.Size = New-Object System.Drawing.Size(100, 20)
-$buttonSelectSQLScript.Visible = $false
-$form.Controls.Add($buttonSelectSQLScript)
-
-# Script type radio button event handlers
-$radioStoredProcedure.Add_CheckedChanged({
-    $labelStoredProcedure.Visible = $radioStoredProcedure.Checked
-    $textStoredProcedure.Visible = $radioStoredProcedure.Checked
-    $labelSQLScript.Visible = !$radioStoredProcedure.Checked
-    $textSQLScriptPath.Visible = !$radioStoredProcedure.Checked
-    $buttonSelectSQLScript.Visible = !$radioStoredProcedure.Checked
-})
-
-$radioSqlScript.Add_CheckedChanged({
-    $labelStoredProcedure.Visible = !$radioSqlScript.Checked
-    $textStoredProcedure.Visible = !$radioSqlScript.Checked
-    $labelSQLScript.Visible = $radioSqlScript.Checked
-    $textSQLScriptPath.Visible = $radioSqlScript.Checked
-    $buttonSelectSQLScript.Visible = $radioSqlScript.Checked
-})
-
-# SQL Script file selection
-$buttonSelectSQLScript.Add_Click({
-    $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
-    $openFileDialog.Filter = "SQL files (*.sql)|*.sql|All files (*.*)|*.*"
-    if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $textSQLScriptPath.Text = $openFileDialog.FileName
+    if ($radioWindowsAuth.Checked) {
+        $radioWindowsAuth.Checked = $true
+        $radioSQLAuth.Checked = $false
+        $labelUsername.Visible = $false
+        $textUsername.Visible = $false
+        $labelPassword.Visible = $false
+        $textPassword.Visible = $false
     }
 })
 
-# CSV file selection
-$labelCSVFile = Create-Label "CSV File:" (New-Object System.Drawing.Point(10, 350))
-$form.Controls.Add($labelCSVFile)
+$radioSQLAuth.Add_CheckedChanged({
+     if ($radioSQLAuth.Checked) {
+        $radioSQLAuth.Checked = $true
+        $radioWindowsAuth.Checked = $false
+        $labelUsername.Visible = $true
+        $textUsername.Visible = $true
+        $labelPassword.Visible = $true
+        $textPassword.Visible = $true
+    }
+})
 
-$textCSVPath = New-Object System.Windows.Forms.TextBox
-$textCSVPath.Location = New-Object System.Drawing.Point(120, 350)
-$textCSVPath.Size = New-Object System.Drawing.Size(200, 20)
-$form.Controls.Add($textCSVPath)
+$groupBoxAuth.Controls.AddRange(@($radioWindowsAuth, $radioSQLAuth, $labelUsername, $textUsername, $labelPassword, $textPassword))
 
+# Create GroupBox for Execution Type
+$groupBoxExecution = New-Object System.Windows.Forms.GroupBox
+$groupBoxExecution.Text = "Execution Type"
+$groupBoxExecution.Size = New-Object System.Drawing.Size(540, 120)
+$groupBoxExecution.Location = New-Object System.Drawing.Point(20, 300)
+
+# Execution type radio buttons
+$radioStoredProcedure = New-Object System.Windows.Forms.RadioButton
+$radioStoredProcedure.Text = "Stored Procedure"
+$radioStoredProcedure.Location = New-Object System.Drawing.Point(20, 30)
+$radioStoredProcedure.Size = New-Object System.Drawing.Size(200, 20)
+$radioStoredProcedure.Checked = $true
+
+$radioSqlScript = New-Object System.Windows.Forms.RadioButton
+$radioSqlScript.Text = "SQL Script"
+$radioSqlScript.Location = New-Object System.Drawing.Point(220, 30)
+$radioSqlScript.Size = New-Object System.Drawing.Size(200, 20)
+
+# Stored procedure/SQL Script controls
+$labelStoredProcedure = Create-Label "Stored Procedure:" (New-Object System.Drawing.Point(20, 70))
+$textStoredProcedure = Create-TextBox (New-Object System.Drawing.Point(120, 67))
+$labelSQLScript = Create-Label "SQL Script:" (New-Object System.Drawing.Point(20, 70))
+$textSQLScriptPath = Create-TextBox (New-Object System.Drawing.Point(120, 67))
+$buttonSelectSQLScript = New-Object System.Windows.Forms.Button
+$buttonSelectSQLScript.Text = "Browse..."
+$buttonSelectSQLScript.Location = New-Object System.Drawing.Point(430, 66)
+$buttonSelectSQLScript.Size = New-Object System.Drawing.Size(80, 23)
+
+$labelSQLScript.Visible = $false
+$textSQLScriptPath.Visible = $false
+$buttonSelectSQLScript.Visible = $false
+
+# Script type radio button event handlers
+$radioStoredProcedure.Add_CheckedChanged({
+    if ($radioStoredProcedure.Checked) {
+        $radioStoredProcedure.Checked = $true
+        $radioSqlScript.Checked = $false
+        $labelStoredProcedure.Visible = $true
+        $textStoredProcedure.Visible = $true
+        $labelSQLScript.Visible = $false
+        $textSQLScriptPath.Visible = $false
+        $buttonSelectSQLScript.Visible = $false
+    }
+})
+
+$radioSqlScript.Add_CheckedChanged({
+    if ($radioSqlScript.Checked) {
+        $radioSqlScript.Checked = $true
+        $radioStoredProcedure.Checked = $false
+        $labelStoredProcedure.Visible = $false
+        $textStoredProcedure.Visible = $false
+        $labelSQLScript.Visible = $true
+        $textSQLScriptPath.Visible = $true
+        $buttonSelectSQLScript.Visible = $true
+    }
+})
+
+$groupBoxExecution.Controls.AddRange(@($radioStoredProcedure, $radioSqlScript, $labelStoredProcedure, $textStoredProcedure, 
+                                     $labelSQLScript, $textSQLScriptPath, $buttonSelectSQLScript))
+
+# Create GroupBox for File Selection
+$groupBoxFiles = New-Object System.Windows.Forms.GroupBox
+$groupBoxFiles.Text = "File Selection"
+$groupBoxFiles.Size = New-Object System.Drawing.Size(540, 120)
+$groupBoxFiles.Location = New-Object System.Drawing.Point(20, 430)
+
+# CSV and Output file selection
+$labelCSVFile = Create-Label "CSV File:" (New-Object System.Drawing.Point(20, 30))
+$textCSVPath = Create-TextBox (New-Object System.Drawing.Point(120, 27))
 $buttonSelectCSV = New-Object System.Windows.Forms.Button
-$buttonSelectCSV.Text = "Select CSV"
-$buttonSelectCSV.Location = New-Object System.Drawing.Point(330, 350)
-$buttonSelectCSV.Size = New-Object System.Drawing.Size(100, 20)
-$form.Controls.Add($buttonSelectCSV)
+$buttonSelectCSV.Text = "Browse..."
+$buttonSelectCSV.Location = New-Object System.Drawing.Point(430, 26)
+$buttonSelectCSV.Size = New-Object System.Drawing.Size(80, 23)
 
 $buttonSelectCSV.Add_Click({
     $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
@@ -187,20 +188,12 @@ $buttonSelectCSV.Add_Click({
     }
 })
 
-# Output file selection
-$labelOutputFile = Create-Label "Output File:" (New-Object System.Drawing.Point(10, 420))
-$form.Controls.Add($labelOutputFile)
-
-$textOutputFilePath = New-Object System.Windows.Forms.TextBox
-$textOutputFilePath.Location = New-Object System.Drawing.Point(120, 420)
-$textOutputFilePath.Size = New-Object System.Drawing.Size(200, 20)
-$form.Controls.Add($textOutputFilePath)
-
+$labelOutputFile = Create-Label "Output File:" (New-Object System.Drawing.Point(20, 70))
+$textOutputFilePath = Create-TextBox (New-Object System.Drawing.Point(120, 67))
 $buttonSelectOutputFile = New-Object System.Windows.Forms.Button
-$buttonSelectOutputFile.Text = "Select Output"
-$buttonSelectOutputFile.Location = New-Object System.Drawing.Point(330, 420)
-$buttonSelectOutputFile.Size = New-Object System.Drawing.Size(100, 20)
-$form.Controls.Add($buttonSelectOutputFile)
+$buttonSelectOutputFile.Text = "Browse..."
+$buttonSelectOutputFile.Location = New-Object System.Drawing.Point(430, 66)
+$buttonSelectOutputFile.Size = New-Object System.Drawing.Size(80, 23)
 
 $buttonSelectOutputFile.Add_Click({
     $saveFileDialog = New-Object System.Windows.Forms.SaveFileDialog
@@ -210,18 +203,18 @@ $buttonSelectOutputFile.Add_Click({
     }
 })
 
-# Progress bar
-$progressBar = New-Object System.Windows.Forms.ProgressBar
-$progressBar.Location = New-Object System.Drawing.Point(10, 460)
-$progressBar.Size = New-Object System.Drawing.Size(420, 20)
-$form.Controls.Add($progressBar)
+$groupBoxFiles.Controls.AddRange(@($labelCSVFile, $textCSVPath, $buttonSelectCSV, 
+                                 $labelOutputFile, $textOutputFilePath, $buttonSelectOutputFile))
 
-# Execute button
+# Progress bar and Execute button
+$progressBar = New-Object System.Windows.Forms.ProgressBar
+$progressBar.Location = New-Object System.Drawing.Point(20, 570)
+$progressBar.Size = New-Object System.Drawing.Size(540, 20)
+
 $buttonExecute = New-Object System.Windows.Forms.Button
 $buttonExecute.Text = "Execute"
-$buttonExecute.Location = New-Object System.Drawing.Point(10, 500)
-$buttonExecute.Size = New-Object System.Drawing.Size(100, 30)
-$form.Controls.Add($buttonExecute)
+$buttonExecute.Location = New-Object System.Drawing.Point(20, 600)
+$buttonExecute.Size = New-Object System.Drawing.Size(540, 30)
 
 $buttonExecute.Add_Click({
     try {
@@ -374,6 +367,12 @@ $buttonExecute.Add_Click({
         }
     }
 })
+
+
+# Add all main controls to form
+$form.Controls.AddRange(@($groupBoxConnection, $groupBoxAuth, $groupBoxExecution, $groupBoxFiles, $progressBar, $buttonExecute))
+
+# [Rest of the event handlers and execution logic remains the same...]
 
 # Show the form
 $form.ShowDialog()
