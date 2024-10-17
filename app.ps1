@@ -242,8 +242,24 @@ $buttonExecute.Add_Click({
 
         foreach ($field in $requiredFields) {
             if ([string]::IsNullOrWhiteSpace($field.Field)) {
-                [System.Windows.Forms.MessageBox]::Show("$($field.Name) is required.", "Validation Error", 
-                    [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                $form = New-Object System.Windows.Forms.Form
+                $form.Text = "Validation Error"
+                $form.Size = New-Object System.Drawing.Size(500, 500)
+    
+                $panel = New-Object System.Windows.Forms.Panel
+                $panel.Dock = 'Fill'
+                $panel.AutoScroll = $true
+
+                $textBox = New-Object System.Windows.Forms.TextBox
+                $textBox.Multiline = $true
+                $textBox.ReadOnly = $true
+                $textBox.ScrollBars = 'Vertical'
+                $textBox.Dock = 'Fill'
+                $textBox.Text = "$($field.Name) is required."
+
+                $panel.Controls.Add($textBox)
+                $form.Controls.Add($panel)
+                $form.ShowDialog()
                 return
             }
         }
@@ -275,27 +291,46 @@ $buttonExecute.Add_Click({
         $batchSize = 1000
         $currentBatch = @()
 
-        foreach ($row in $csvData) {
-            $columns = $row.PSObject.Properties.Name -join ', '
-            $values = ($row.PSObject.Properties.Value | ForEach-Object { 
-                if ($_ -eq $null) { "NULL" } else { "'$($_ -replace "'", "''")'" }
-            }) -join ', '
-
-            $currentBatch += "INSERT INTO $($textTableName.Text) ($columns) VALUES ($values)"
-            
-            $processedRows++
-            $progressBar.Value = $processedRows
-
-            if ($currentBatch.Count -eq $batchSize -or $processedRows -eq $totalRows) {
-                $batchQuery = $currentBatch -join "`n"
-                try {
-                    Invoke-Sqlcmd -ConnectionString $connectionString -Query $batchQuery
-                } catch {
-                    Write-Host "Error inserting batch: $_"
+          foreach ($row in $csvData) {
+                # Properly format column names with brackets
+                $columns = ($row.PSObject.Properties.Name | ForEach-Object { "[$_]" }) -join ", "
+    
+                # Handle values with proper formatting
+                $values = ($row.PSObject.Properties.Value | ForEach-Object {
+                    if ($null -eq $_) {
+                            "NULL"
+                        }
+                        <#elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
+                            "$_" # Convert numeric value to string without quotes
+                        }
+                        elseif ($_ -is [datetime]) {
+                            # Format datetime in SQL Server compatible format (yyyy-MM-dd HH:mm:ss)
+                            "'$($_.ToString("yyyy-MM-dd HH:mm:ss"))'"
+                        }
+                        else {
+                            # Escape single quotes and wrap in quotes
+                            "'$($_ -replace "'", "''")'"
+                        }#>
+                }) -join ", "
+    
+                # Build the INSERT statement
+                $currentBatch += "INSERT INTO [$($textTableName.Text)] ($columns) VALUES ($values);"
+    
+                $processedRows++
+                $progressBar.Value = $processedRows
+    
+                # Handle batch processing
+                if ($currentBatch.Count -eq $batchSize -or $processedRows -eq $totalRows) {
+                    $batchQuery = $currentBatch -join "`n"
+                    try {
+                        Invoke-Sqlcmd -ConnectionString $connectionString -Query $batchQuery
+                    }
+                    catch {
+                        Write-Host "Error inserting batch: $_"
+                    }
+                    $currentBatch = @()
                 }
-                $currentBatch = @()
             }
-        }
 
 # Execute stored procedure or SQL script
         if ($radioStoredProcedure.Checked) {
