@@ -299,6 +299,8 @@ $buttonExecute.Add_Click({
                 $values = ($row.PSObject.Properties.Value | ForEach-Object {
                     if ($null -eq $_) {
                             "NULL"
+                        }else{
+                            "'[$_]'"
                         }
                         <#elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
                             "$_" # Convert numeric value to string without quotes
