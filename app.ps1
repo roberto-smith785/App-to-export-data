@@ -3,7 +3,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
 # Create the form with improved size
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CSV to SQL Execution"
+$form.Text = "DataSmart"
 $form.Size = New-Object System.Drawing.Size(600, 700)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
@@ -169,11 +169,11 @@ $groupBoxExecution.Controls.AddRange(@($radioStoredProcedure, $radioSqlScript, $
 # Create GroupBox for File Selection
 $groupBoxFiles = New-Object System.Windows.Forms.GroupBox
 $groupBoxFiles.Text = "File Selection"
-$groupBoxFiles.Size = New-Object System.Drawing.Size(540, 120)
+$groupBoxFiles.Size = New-Object System.Drawing.Size(540, 140)
 $groupBoxFiles.Location = New-Object System.Drawing.Point(20, 430)
 
 # CSV and Output file selection
-$labelCSVFile = Create-Label "CSV File:" (New-Object System.Drawing.Point(20, 30))
+$labelCSVFile = Create-Label "Data File(CSV):" (New-Object System.Drawing.Point(20, 30))
 $textCSVPath = Create-TextBox (New-Object System.Drawing.Point(120, 27))
 $buttonSelectCSV = New-Object System.Windows.Forms.Button
 $buttonSelectCSV.Text = "Browse..."
@@ -188,7 +188,8 @@ $buttonSelectCSV.Add_Click({
     }
 })
 
-$labelOutputFile = Create-Label "Output File:" (New-Object System.Drawing.Point(20, 70))
+# CSV and Output file selection
+$labelOutputFile = Create-Label "Output File(Excel):" (New-Object System.Drawing.Point(20, 70))
 $textOutputFilePath = Create-TextBox (New-Object System.Drawing.Point(120, 67))
 $buttonSelectOutputFile = New-Object System.Windows.Forms.Button
 $buttonSelectOutputFile.Text = "Browse..."
@@ -196,24 +197,40 @@ $buttonSelectOutputFile.Location = New-Object System.Drawing.Point(430, 66)
 $buttonSelectOutputFile.Size = New-Object System.Drawing.Size(80, 23)
 
 $buttonSelectOutputFile.Add_Click({
+    $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
+    $openFileDialog.Filter = "XLSX files (*.xlsx)|*.xlsx|All files (*.*)|*.*"
+    if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $textOutputFilePath.Text = $openFileDialog.FileName
+    }
+})
+
+$labelLogFile = Create-Label "Log File(txt):" (New-Object System.Drawing.Point(20, 110))
+$textLogFilePath = Create-TextBox (New-Object System.Drawing.Point(120, 107))
+$buttonSelectLogFile = New-Object System.Windows.Forms.Button
+$buttonSelectLogFile.Text = "Browse..."
+$buttonSelectLogFile.Location = New-Object System.Drawing.Point(430, 106)
+$buttonSelectLogFile.Size = New-Object System.Drawing.Size(80, 23)
+
+$buttonSelectLogFile.Add_Click({
     $saveFileDialog = New-Object System.Windows.Forms.SaveFileDialog
     $saveFileDialog.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
     if ($saveFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $textOutputFilePath.Text = $saveFileDialog.FileName
+        $textLogFilePath.Text = $saveFileDialog.FileName
     }
 })
 
 $groupBoxFiles.Controls.AddRange(@($labelCSVFile, $textCSVPath, $buttonSelectCSV, 
-                                 $labelOutputFile, $textOutputFilePath, $buttonSelectOutputFile))
+                                 $labelOutputFile, $textOutputFilePath, $buttonSelectOutputFile,
+                                 $labelLogFile, $textLogFilePath, $buttonSelectLogFile))
 
 # Progress bar and Execute button
 $progressBar = New-Object System.Windows.Forms.ProgressBar
-$progressBar.Location = New-Object System.Drawing.Point(20, 570)
+$progressBar.Location = New-Object System.Drawing.Point(20, 590)
 $progressBar.Size = New-Object System.Drawing.Size(540, 20)
 
 $buttonExecute = New-Object System.Windows.Forms.Button
 $buttonExecute.Text = "Execute"
-$buttonExecute.Location = New-Object System.Drawing.Point(20, 600)
+$buttonExecute.Location = New-Object System.Drawing.Point(20, 610)
 $buttonExecute.Size = New-Object System.Drawing.Size(540, 30)
 
 $buttonExecute.Add_Click({
@@ -225,6 +242,7 @@ $buttonExecute.Add_Click({
             @{ Field = $textTableName.Text; Name = "Table Name" }
             @{ Field = $textCSVPath.Text; Name = "CSV File" }
             @{ Field = $textOutputFilePath.Text; Name = "Output File" }
+            @{ Field = $textLogFilePath.Text; Name = "Log File" }
         )
 
         if ($radioSQLAuth.Checked) {
@@ -340,15 +358,86 @@ $buttonExecute.Add_Click({
             try {
                 $query = "EXEC $($textStoredProcedure.Text)"
                 $results = Invoke-Sqlcmd -ConnectionString $connectionString -Query $query -As DataTables
-                
+
                 if ($results.Count -eq 0) {
                     Write-Host "Stored procedure executed successfully. No results returned."
                 } else {
                     Write-Host "Stored procedure executed successfully."
-                    foreach ($table in $results) {
-                        Write-Host "Result set contains $($table.Rows.Count) rows"
-                        $table | Format-Table -AutoSize | Out-String | Write-Host
+                    # Create a new Excel application
+                $excel = New-Object -ComObject Excel.Application
+                $excel.Visible = $false
+                $workbook = $excel.Workbooks.Add()
+                $saveLocation = $textOutputFilePath.Text
+
+                # Counter for worksheet naming
+                $sheetCounter = 1
+
+                foreach ($table in $results) {
+                $form = New-Object System.Windows.Forms.Form
+                $form.Text = "Data Info"
+                $form.Size = New-Object System.Drawing.Size(500, 500)
+    
+                $panel = New-Object System.Windows.Forms.Panel
+                $panel.Dock = 'Fill'
+                $panel.AutoScroll = $true
+
+                $textBox = New-Object System.Windows.Forms.TextBox
+                $textBox.Multiline = $true
+                $textBox.ReadOnly = $true
+                $textBox.ScrollBars = 'Vertical'
+                $textBox.Dock = 'Fill'
+                $textBox.Text = "Result set contains $($table.Rows.Count) rows: $(($table | Format-Table -AutoSize -Wrap | Out-String))"
+
+                $panel.Controls.Add($textBox)
+                $form.Controls.Add($panel)
+                $form.ShowDialog()
+    
+                    # Create a new worksheet for each result set
+                    if ($sheetCounter -gt 1) {
+                        $worksheet = $workbook.Worksheets.Add()
+                    } else {
+                        $worksheet = $workbook.Worksheets.Item(1)
                     }
+    
+                    # Name the worksheet
+                    $worksheet.Name = "Sheet$($sheetCounter)"
+    
+                    # Get column headers
+                    $headers = $table | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
+    
+                    # Write headers
+                    for ($col = 0; $col -lt $headers.Count; $col++) {
+                        $worksheet.Cells(1, $col + 1) = $headers[$col]
+                    }
+    
+                    # Write data
+                    for ($row = 0; $row -lt $table.Rows.Count; $row++) {
+                        for ($col = 0; $col -lt $headers.Count; $col++) {
+                            $worksheet.Cells($row + 2, $col + 1) = $table.Rows[$row].$($headers[$col])
+                        }
+                    }
+    
+                    # Auto-fit columns
+                    $usedRange = $worksheet.UsedRange
+                    $usedRange.EntireColumn.AutoFit() | Out-Null
+    
+                    $sheetCounter++
+                }
+
+                # Save and close
+                try {
+                    $workbook.SaveAs($saveLocation)
+                    Write-Host "Excel file saved successfully to: $saveLocation" -ForegroundColor Green
+                }
+                catch {
+                    Write-Host "Error saving file: $_" -ForegroundColor Red
+                }
+                finally {
+                    $workbook.Close($true)
+                    $excel.Quit()
+                    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+                    Remove-Variable excel
+                }
                 }
             } catch {
                 Write-Host "Error executing stored procedure: $_"
