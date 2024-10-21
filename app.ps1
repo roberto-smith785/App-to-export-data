@@ -297,14 +297,54 @@ $buttonExecute.Add_Click({
 
         # Start transcript for logging
         Start-Transcript -Path $textOutputFilePath.Text -Force
+        # Query to fetch table schema
+        $tableSchema = "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_NAME = '$($textTableName.Text -replace '\[+', '' -replace '\]+', '')'"
+
+        # Execute the query and store the results
+        $tableSchemaResults = Invoke-Sqlcmd -ConnectionString $connectionString -Query $tableSchema
+
+        # Create a hashtable
+        $tableSchemaHashTable = @{}
+
+        # Populate the hashtable with column name as key, and the rest as values
+        $tableSchemaResults | ForEach-Object {
+            $tableSchemaHashTable[$_.COLUMN_NAME] = @{
+                DataType = $_.DATA_TYPE
+                IsNullable = $_.IS_NULLABLE
+            }
+        }
+
+        # Output the hashtable
+# Create formatted strings
+$headerFormat = "{0,-15} {1,-12} {2,-8}"
+$lineFormat = "{0,-15} {1,-12} {2,-8}"
+$header = $headerFormat -f "Column Name", "Data Type", "Nullable"
+$separator = "-" * 35
+
+# Build the table content
+$tableContent = $tableSchemaHashTable.GetEnumerator() | 
+    Sort-Object Key | 
+    ForEach-Object {
+        $lineFormat -f $_.Key, $_.Value.DataType, $(if($_.Value.IsNullable){"YES"}else{"NO"})
+    } | Out-String
+
+# Output everything in a single Write-Host command
+Write-Host @"
+Table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')] Schema:
+$separator
+$header
+$separator
+$tableContent$separator
+"@
 
         # Truncate existing table
-        $truncateQuery = "TRUNCATE TABLE $($textTableName.Text)"
-        Write-Host "Clearing existing data from table..."
+        $truncateQuery = "TRUNCATE TABLE [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]"
+        Write-Host "Clearing existing data from table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
         Invoke-Sqlcmd -ConnectionString $connectionString -Query $truncateQuery
-
         # Insert CSV data
-        Write-Host "Inserting CSV data..."
+        Write-Host "Inserting CSV data into table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
         $processedRows = 0
         $batchSize = 1000
         $currentBatch = @()
@@ -317,10 +357,7 @@ $buttonExecute.Add_Click({
                 $values = ($row.PSObject.Properties.Value | ForEach-Object {
                     if ($null -eq $_) {
                             "NULL"
-                        }else{
-                            "'[$_]'"
-                        }
-                        <#elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
+                        }elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
                             "$_" # Convert numeric value to string without quotes
                         }
                         elseif ($_ -is [datetime]) {
@@ -330,12 +367,12 @@ $buttonExecute.Add_Click({
                         else {
                             # Escape single quotes and wrap in quotes
                             "'$($_ -replace "'", "''")'"
-                        }#>
+                        }
                 }) -join ", "
     
                 # Build the INSERT statement
-                $currentBatch += "INSERT INTO [$($textTableName.Text)] ($columns) VALUES ($values);"
-    
+                $currentBatch += "INSERT INTO [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')] ($columns) VALUES ($values);"
+
                 $processedRows++
                 $progressBar.Value = $processedRows
     
