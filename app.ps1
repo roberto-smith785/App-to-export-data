@@ -197,10 +197,11 @@ $buttonSelectOutputFile.Location = New-Object System.Drawing.Point(430, 66)
 $buttonSelectOutputFile.Size = New-Object System.Drawing.Size(80, 23)
 
 $buttonSelectOutputFile.Add_Click({
-    $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
-    $openFileDialog.Filter = "XLSX files (*.xlsx)|*.xlsx|All files (*.*)|*.*"
-    if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $textOutputFilePath.Text = $openFileDialog.FileName
+    $saveFileDialog = New-Object System.Windows.Forms.SaveFileDialog
+    $saveFileDialog.Filter = "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*"
+    $saveFileDialog.DefaultExt = "xlsx"
+    if ($saveFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $textOutputFilePath.Text = $saveFileDialog.FileName
     }
 })
 
@@ -228,6 +229,12 @@ $progressBar = New-Object System.Windows.Forms.ProgressBar
 $progressBar.Location = New-Object System.Drawing.Point(20, 590)
 $progressBar.Size = New-Object System.Drawing.Size(540, 20)
 
+# Status Label
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Location = New-Object System.Drawing.Point(20, 570)
+$statusLabel.Size = New-Object System.Drawing.Size(540, 20)
+$statusLabel.Text = "Ready"
+
 $buttonExecute = New-Object System.Windows.Forms.Button
 $buttonExecute.Text = "Execute"
 $buttonExecute.Location = New-Object System.Drawing.Point(20, 610)
@@ -235,6 +242,11 @@ $buttonExecute.Size = New-Object System.Drawing.Size(540, 30)
 
 $buttonExecute.Add_Click({
     try {
+        # Reset progress bar and status
+        $progressBar.Value = 0
+        $progressBar.Maximum = 100
+        $statusLabel.Text = "Initializing..."
+        
         # Validate required fields
         $requiredFields = @(
             @{ Field = $textServer.Text; Name = "SQL Server" }
@@ -260,24 +272,12 @@ $buttonExecute.Add_Click({
 
         foreach ($field in $requiredFields) {
             if ([string]::IsNullOrWhiteSpace($field.Field)) {
-                $form = New-Object System.Windows.Forms.Form
-                $form.Text = "Validation Error"
-                $form.Size = New-Object System.Drawing.Size(500, 500)
-    
-                $panel = New-Object System.Windows.Forms.Panel
-                $panel.Dock = 'Fill'
-                $panel.AutoScroll = $true
-
-                $textBox = New-Object System.Windows.Forms.TextBox
-                $textBox.Multiline = $true
-                $textBox.ReadOnly = $true
-                $textBox.ScrollBars = 'Vertical'
-                $textBox.Dock = 'Fill'
-                $textBox.Text = "$($field.Name) is required."
-
-                $panel.Controls.Add($textBox)
-                $form.Controls.Add($panel)
-                $form.ShowDialog()
+                [System.Windows.Forms.MessageBox]::Show(
+                    "$($field.Name) is required.",
+                    "Validation Error",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error
+                )
                 return
             }
         }
@@ -289,18 +289,24 @@ $buttonExecute.Add_Click({
             "Server=$($textServer.Text);Database=$($textDatabase.Text);User Id=$($textUsername.Text);Password=$($textPassword.Text);"
         }
 
+        # Start transcript for logging
+        Start-Transcript -Path $textLogFilePath.Text -Force
+
+        # Update progress - 10%
+        $progressBar.Value = 10
+        $statusLabel.Text = "Reading CSV data..."
+        
         # Import CSV data
         $csvData = Import-Csv -Path $textCSVPath.Text
         $totalRows = $csvData.Count
-        $progressBar.Maximum = $totalRows
-        $progressBar.Value = 0
 
-        # Start transcript for logging
-        Start-Transcript -Path $textOutputFilePath.Text -Force
+        # Update progress - 20%
+        $progressBar.Value = 20
+        $statusLabel.Text = "Fetching table schema..."
+
         # Query to fetch table schema
         $tableSchema = "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
-                        FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_NAME = '$($textTableName.Text -replace '\[+', '' -replace '\]+', '')'"
+                       FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '$($textTableName.Text -replace '\[+', '' -replace '\]+', '')'"
 
         # Execute the query and store the results
         $tableSchemaResults = Invoke-Sqlcmd -ConnectionString $connectionString -Query $tableSchema
@@ -316,171 +322,179 @@ $buttonExecute.Add_Click({
             }
         }
 
-        # Output the hashtable
-# Create formatted strings
-$headerFormat = "{0,-15} {1,-12} {2,-8}"
-$lineFormat = "{0,-15} {1,-12} {2,-8}"
-$header = $headerFormat -f "Column Name", "Data Type", "Nullable"
-$separator = "-" * 35
-
-# Build the table content
-$tableContent = $tableSchemaHashTable.GetEnumerator() | 
-    Sort-Object Key | 
-    ForEach-Object {
-        $lineFormat -f $_.Key, $_.Value.DataType, $(if($_.Value.IsNullable){"YES"}else{"NO"})
-    } | Out-String
-
-# Output everything in a single Write-Host command
-Write-Host @"
+        # Output schema information
+        Write-Host @"
 Table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')] Schema:
-$separator
-$header
-$separator
-$tableContent$separator
+$("-" * 35)
+$("Column Name".PadRight(15)) $("Data Type".PadRight(12)) $("Nullable")
+$("-" * 35)
+$($tableSchemaHashTable.GetEnumerator() | Sort-Object Key | ForEach-Object {
+    "$($_.Key.PadRight(15)) $($_.Value.DataType.PadRight(12)) $(if($_.Value.IsNullable){'YES'}else{'NO'})"
+})
+$("-" * 35)
 "@
+
+        # Update progress - 30%
+        $progressBar.Value = 30
+        $statusLabel.Text = "Clearing existing data..."
 
         # Truncate existing table
         $truncateQuery = "TRUNCATE TABLE [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]"
-        Write-Host "Clearing existing data from table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
+        #Write-Host "Clearing existing data from table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
         Invoke-Sqlcmd -ConnectionString $connectionString -Query $truncateQuery
+
+        # Update progress - 40%
+        $progressBar.Value = 40
+        $statusLabel.Text = "Inserting CSV data..."
+
         # Insert CSV data
-        Write-Host "Inserting CSV data into table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
+        #Write-Host "Inserting CSV data into table [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')]..."
         $processedRows = 0
         $batchSize = 1000
         $currentBatch = @()
 
-          foreach ($row in $csvData) {
-                # Properly format column names with brackets
-                $columns = ($row.PSObject.Properties.Name | ForEach-Object { "[$_]" }) -join ", "
-    
-                # Handle values with proper formatting
-                $values = ($row.PSObject.Properties.Value | ForEach-Object {
-                    if ($null -eq $_) {
-                            "NULL"
-                        }elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
-                            "$_" # Convert numeric value to string without quotes
-                        }
-                        elseif ($_ -is [datetime]) {
-                            # Format datetime in SQL Server compatible format (yyyy-MM-dd HH:mm:ss)
-                            "'$($_.ToString("yyyy-MM-dd HH:mm:ss"))'"
-                        }
-                        else {
-                            # Escape single quotes and wrap in quotes
-                            "'$($_ -replace "'", "''")'"
-                        }
-                }) -join ", "
-    
-                # Build the INSERT statement
-                $currentBatch += "INSERT INTO [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')] ($columns) VALUES ($values);"
+        foreach ($row in $csvData) {
+            # Properly format column names with brackets
+            $columns = ($row.PSObject.Properties.Name | ForEach-Object { "[$_]" }) -join ", "
 
-                $processedRows++
-                $progressBar.Value = $processedRows
-    
-                # Handle batch processing
-                if ($currentBatch.Count -eq $batchSize -or $processedRows -eq $totalRows) {
-                    $batchQuery = $currentBatch -join "`n"
-                    try {
-                        Invoke-Sqlcmd -ConnectionString $connectionString -Query $batchQuery
-                    }
-                    catch {
-                        Write-Host "Error inserting batch: $_"
-                    }
-                    $currentBatch = @()
+            # Handle values with proper formatting
+            $values = ($row.PSObject.Properties.Value | ForEach-Object {
+                if ($null -eq $_) {
+                    "NULL"
                 }
-            }
+                elseif ($_ -is [int] -or $_ -is [decimal] -or $_ -is [double]) {
+                    "$_"
+                }
+                elseif ($_ -is [datetime]) {
+                    "'$($_.ToString("yyyy-MM-dd HH:mm:ss"))'"
+                }
+                else {
+                    "'$($_ -replace "'", "''")'"
+                }
+            }) -join ", "
 
-# Execute stored procedure or SQL script
+            # Build the INSERT statement
+            $currentBatch += "INSERT INTO [$($textTableName.Text -replace '\[+', '' -replace '\]+', '')] ($columns) VALUES ($values);"
+
+            $processedRows++
+            # Calculate progress between 40% and 60%
+            $progressBar.Value = 40 + ([Math]::Floor($processedRows / $totalRows * 20))
+            
+            # Handle batch processing
+            if ($currentBatch.Count -eq $batchSize -or $processedRows -eq $totalRows) {
+                $batchQuery = $currentBatch -join "`n"
+                try {
+                    Invoke-Sqlcmd -ConnectionString $connectionString -Query $batchQuery
+                }
+                catch {
+                    Write-Host "Error inserting batch: $_"
+                    throw
+                }
+                $currentBatch = @()
+            }
+        }
+
+        # Update progress - 60%
+        $progressBar.Value = 60
+        $statusLabel.Text = "Processing data..."
+
+        # Execute stored procedure or SQL script
         if ($radioStoredProcedure.Checked) {
-            Write-Host "Executing stored procedure $($textStoredProcedure.Text)..."
+            $statusLabel.Text = "Executing stored procedure..."
+            #Write-Host "Executing stored procedure $($textStoredProcedure.Text)..."
             try {
                 $query = "EXEC $($textStoredProcedure.Text)"
                 $results = Invoke-Sqlcmd -ConnectionString $connectionString -Query $query -As DataTables
 
+                # Update progress - 80%
+                $progressBar.Value = 80
+                $statusLabel.Text = "Generating Excel output..."
+
                 if ($results.Count -eq 0) {
                     Write-Host "Stored procedure executed successfully. No results returned."
                 } else {
-                    Write-Host "Stored procedure executed successfully."
+                    #Write-Host "Stored procedure executed successfully. Processing results..."
+                    
                     # Create a new Excel application
-                $excel = New-Object -ComObject Excel.Application
-                $excel.Visible = $false
-                $workbook = $excel.Workbooks.Add()
-                $saveLocation = $textOutputFilePath.Text
+                    $excel = New-Object -ComObject Excel.Application
+                    $excel.Visible = $false
+                    $workbook = $excel.Workbooks.Add()
+                    $saveLocation = $textOutputFilePath.Text
 
-                # Counter for worksheet naming
-                $sheetCounter = 1
-
-                foreach ($table in $results) {
-                $form = New-Object System.Windows.Forms.Form
-                $form.Text = "Data Info"
-                $form.Size = New-Object System.Drawing.Size(500, 500)
-    
-                $panel = New-Object System.Windows.Forms.Panel
-                $panel.Dock = 'Fill'
-                $panel.AutoScroll = $true
-
-                $textBox = New-Object System.Windows.Forms.TextBox
-                $textBox.Multiline = $true
-                $textBox.ReadOnly = $true
-                $textBox.ScrollBars = 'Vertical'
-                $textBox.Dock = 'Fill'
-                $textBox.Text = "Result set contains $($table.Rows.Count) rows: $(($table | Format-Table -AutoSize -Wrap | Out-String))"
-
-                $panel.Controls.Add($textBox)
-                $form.Controls.Add($panel)
-                $form.ShowDialog()
-    
-                    # Create a new worksheet for each result set
-                    if ($sheetCounter -gt 1) {
-                        $worksheet = $workbook.Worksheets.Add()
-                    } else {
-                        $worksheet = $workbook.Worksheets.Item(1)
+                    # Remove default worksheets
+                    while ($workbook.Worksheets.Count -gt 1) {
+                        $workbook.Worksheets.Item($workbook.Worksheets.Count).Delete()
                     }
-    
-                    # Name the worksheet
-                    $worksheet.Name = "Sheet$($sheetCounter)"
-    
-                    # Get column headers
-                    $headers = $table | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name
-    
-                    # Write headers
-                    for ($col = 0; $col -lt $headers.Count; $col++) {
-                        $worksheet.Cells(1, $col + 1) = $headers[$col]
-                    }
-    
-                    # Write data
-                    for ($row = 0; $row -lt $table.Rows.Count; $row++) {
-                        for ($col = 0; $col -lt $headers.Count; $col++) {
-                            $worksheet.Cells($row + 2, $col + 1) = $table.Rows[$row].$($headers[$col])
+
+                    # Process each result set
+                    for ($tableIndex = 0; $tableIndex -lt $results.Count; $tableIndex++) {
+                        $table = $results[$tableIndex]
+                        write-host $table.Columns[0].Table.TableName
+                        # Get table name from first column or use default name
+                        $tableName = if ($table.Columns[0].Table.TableName) {
+                            $table.Columns[0].Table.TableName -replace '[\\/:*?\[\]]', '_'
+                        } else {
+                            "Result_$($tableIndex + 1)"
                         }
-                    }
-    
-                    # Auto-fit columns
-                    $usedRange = $worksheet.UsedRange
-                    $usedRange.EntireColumn.AutoFit() | Out-Null
-    
-                    $sheetCounter++
-                }
 
-                # Save and close
-                try {
-                    $workbook.SaveAs($saveLocation)
-                    Write-Host "Excel file saved successfully to: $saveLocation" -ForegroundColor Green
-                }
-                catch {
-                    Write-Host "Error saving file: $_" -ForegroundColor Red
-                }
-                finally {
-                    $workbook.Close($true)
-                    $excel.Quit()
-                    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
-                    Remove-Variable excel
-                }
+                        # Create worksheet
+                        if ($tableIndex -eq 0) {
+                            $worksheet = $workbook.Worksheets.Item(1)
+                        } else {
+                            $worksheet = $workbook.Worksheets.Add()
+                        }
+                        $worksheet.Name = $tableName
+
+                        # Write headers
+                        $headers = @($table.Columns | Select-Object -ExpandProperty ColumnName)
+                        for ($col = 0; $col -lt $headers.Count; $col++) {
+                            $worksheet.Cells(1, $col + 1) = $headers[$col]
+                            # Format header row
+                            $worksheet.Cells(1, $col + 1).Font.Bold = $true
+                        }
+
+                        # Write data
+                        for ($row = 0; $row -lt $table.Rows.Count; $row++) {
+                            for ($col = 0; $col -lt $headers.Count; $col++) {
+                                $worksheet.Cells($row + 2, $col + 1) = $table.Rows[$row][$col]
+                            }
+                        }
+
+                        # Auto-fit columns
+                        $usedRange = $worksheet.UsedRange
+                        $usedRange.EntireColumn.AutoFit() | Out-Null
+
+                        Write-Host "Created worksheet '$tableName' with $($table.Rows.Count) rows and $($headers.Count) columns"
+                    }
+
+                    # Update progress - 90%
+                    $progressBar.Value = 90
+                    $statusLabel.Text = "Saving Excel file..."
+
+                    # Save and close
+                    try {
+                        $workbook.SaveAs($saveLocation)
+                        Write-Host "Excel file saved successfully to: $saveLocation"
+                    }
+                    catch {
+                        Write-Host "Error saving file: $_"
+                        throw
+                    }
+                    finally {
+                        $workbook.Close($true)
+                        $excel.Quit()
+                        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+                        [System.GC]::Collect()
+                        [System.GC]::WaitForPendingFinalizers()
+                    }
                 }
             } catch {
                 Write-Host "Error executing stored procedure: $_"
                 throw
             }
-        } elseif ($radioSqlScript.Checked) {
+        } 
+        elseif ($radioSqlScript.Checked) {
+            $statusLabel.Text = "Executing SQL script..."
             Write-Host "Executing SQL script from $($textSQLScriptPath.Text)..."
             try {
                 if (-not (Test-Path $textSQLScriptPath.Text)) {
@@ -507,8 +521,11 @@ $tableContent$separator
             }
         }
 
+        # Update progress - 100%
+        $progressBar.Value = 100
+        $statusLabel.Text = "Operation completed successfully"
+        
         Stop-Transcript
-        $progressBar.Value = $progressBar.Maximum
         [System.Windows.Forms.MessageBox]::Show(
             "Operation completed successfully. Check the output file for details.",
             "Success",
@@ -525,17 +542,15 @@ $tableContent$separator
             [System.Windows.Forms.MessageBoxIcon]::Error
         )
     } finally {
-        if ($progressBar.Value -ne $progressBar.Maximum) {
+        if ($progressBar.Value -ne 100) {
             $progressBar.Value = 0
         }
+        $statusLabel.Text = "Ready"
     }
 })
 
-
-# Add all main controls to form
-$form.Controls.AddRange(@($groupBoxConnection, $groupBoxAuth, $groupBoxExecution, $groupBoxFiles, $progressBar, $buttonExecute))
-
-# [Rest of the event handlers and execution logic remains the same...]
+# Add all controls to form
+$form.Controls.AddRange(@($groupBoxConnection, $groupBoxAuth, $groupBoxExecution, $groupBoxFiles, $statusLabel, $progressBar, $buttonExecute))
 
 # Show the form
 $form.ShowDialog()
